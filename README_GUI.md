@@ -18,7 +18,7 @@
 - **文本**: TXT、CSV、JSON、XML文件
 - **图片**: JPG、PNG、GIF、BMP等
 - **音频**: MP3、WAV、M4A等
-- **其他**: ZIP压缩包、EPUB电子书、Jupyter Notebook等
+- **其他**: ZIP压缩包、EPUB电子书等
 
 ## 快速开始
 

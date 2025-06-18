@@ -444,8 +444,6 @@ class MarkItDownGUI:
 • 图像文件 (.jpg, .png, .gif, .bmp)
 • 音频文件 (.mp3, .wav, .m4a)
 • 电子书 (.epub)
-• Jupyter笔记本 (.ipynb)
-• Outlook邮件 (.msg)
 • 压缩文件 (.zip)
 • YouTube链接
 
