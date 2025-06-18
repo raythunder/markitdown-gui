@@ -27,7 +27,7 @@
 1. 确保已安装Python 3.8或更高版本
 2. 安装依赖:
    ```bash
-   pip install -e packages/markitdown[all]
+   pip install markitdown[all]
    ```
 3. 运行GUI程序:
    ```bash
@@ -45,7 +45,7 @@
 ```bash
 # 安装依赖
 pip install pyinstaller
-pip install -e packages/markitdown[all]
+pip install markitdown[all]
 
 # 运行构建脚本
 python build_exe.py

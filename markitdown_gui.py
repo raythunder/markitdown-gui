@@ -14,16 +14,29 @@ import traceback
 from pathlib import Path
 import webbrowser
 
-# 添加 markitdown 包到 Python 路径
-markitdown_path = os.path.join(os.path.dirname(__file__), 'packages', 'markitdown', 'src')
-if markitdown_path not in sys.path:
-    sys.path.insert(0, markitdown_path)
-
 try:
     from markitdown import MarkItDown
 except ImportError as e:
     print(f"导入 markitdown 失败: {e}")
-    print("请确保已安装markitdown包: pip install -e packages/markitdown[all]")
+    print("请安装markitdown包: pip install markitdown")
+    print("或者安装完整版本: pip install 'markitdown[all]'")
+    
+    # 如果在GUI环境中，显示错误对话框
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()  # 隐藏主窗口
+        messagebox.showerror("导入错误", 
+                            "未找到 markitdown 包！\n\n"
+                            "请先安装 markitdown:\n"
+                            "pip install markitdown\n\n"
+                            "或者安装完整版本:\n"
+                            "pip install 'markitdown[all]'")
+        root.destroy()
+    except:
+        pass
+    
     sys.exit(1)
 
 # 设置magika模型路径（用于打包后的exe文件）
@@ -259,7 +272,7 @@ class MarkItDownGUI:
     def browse_file(self):
         """浏览文件对话框"""
         filetypes = [
-            ("所有支持的文件", "*.pdf;*.docx;*.pptx;*.xlsx;*.xls;*.html;*.htm;*.txt;*.csv;*.json;*.xml;*.zip;*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.mp3;*.wav"),
+            ("所有支持的文件", "*.pdf;*.docx;*.pptx;*.xlsx;*.xls;*.html;*.htm;*.txt;*.csv;*.json;*.xml;*.zip;*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.mp3;*.wav;*.epub;"),
             ("PDF文件", "*.pdf"),
             ("Word文档", "*.docx;*.doc"),
             ("PowerPoint演示文稿", "*.pptx;*.ppt"),
@@ -267,7 +280,8 @@ class MarkItDownGUI:
             ("网页文件", "*.html;*.htm"),
             ("文本文件", "*.txt;*.csv;*.json;*.xml"),
             ("图像文件", "*.jpg;*.jpeg;*.png;*.gif;*.bmp"),
-            ("音频文件", "*.mp3;*.wav"),
+            ("音频文件", "*.mp3;*.wav;*.m4a"),
+            ("电子书", "*.epub"),
             ("压缩文件", "*.zip"),
             ("所有文件", "*.*")
         ]
@@ -428,7 +442,10 @@ class MarkItDownGUI:
 • 网页文件 (.html, .htm)
 • 文本文件 (.txt, .csv, .json, .xml)
 • 图像文件 (.jpg, .png, .gif, .bmp)
-• 音频文件 (.mp3, .wav)
+• 音频文件 (.mp3, .wav, .m4a)
+• 电子书 (.epub)
+• Jupyter笔记本 (.ipynb)
+• Outlook邮件 (.msg)
 • 压缩文件 (.zip)
 • YouTube链接
 

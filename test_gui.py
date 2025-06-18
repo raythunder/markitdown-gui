@@ -22,16 +22,12 @@ def test_imports():
         return False
     
     try:
-        # 添加markitdown路径
-        markitdown_path = os.path.join(os.path.dirname(__file__), 'packages', 'markitdown', 'src')
-        if markitdown_path not in sys.path:
-            sys.path.insert(0, markitdown_path)
-        
         from markitdown import MarkItDown
         print("✓ markitdown导入成功")
     except ImportError as e:
         print(f"✗ markitdown导入失败: {e}")
-        print("请运行: pip install -e packages/markitdown[all]")
+        print("请运行: pip install markitdown")
+        print("或安装完整版本: pip install 'markitdown[all]'")
         return False
     
     return True
@@ -96,9 +92,7 @@ def test_file_structure():
     required_files = [
         'markitdown_gui.py',
         'build_exe.py',
-        'build.bat',
-        'packages/markitdown/src/markitdown/__init__.py',
-        'packages/markitdown/src/markitdown/_markitdown.py'
+        'build.bat'
     ]
     
     all_good = True

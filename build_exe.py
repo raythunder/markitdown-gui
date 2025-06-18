@@ -10,20 +10,13 @@ def install_requirements():
     
     requirements = [
         "pyinstaller",
-        "tkinter",  # 通常预装
+        "markitdown[all]",  # 完整版markitdown包
     ]
     
-    # 安装markitdown及其依赖
-    markitdown_path = Path("packages/markitdown")
-    if markitdown_path.exists():
-        print("安装markitdown...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(markitdown_path / "[all]")], check=True)
-    
-    # 安装PyInstaller
+    # 安装所有依赖
     for req in requirements:
-        if req != "tkinter":  # tkinter通常预装
-            print(f"安装 {req}...")
-            subprocess.run([sys.executable, "-m", "pip", "install", req], check=True)
+        print(f"安装 {req}...")
+        subprocess.run([sys.executable, "-m", "pip", "install", req], check=True)
 
 def create_spec_file():
     """创建PyInstaller规范文件"""
@@ -33,9 +26,6 @@ import os
 import sys
 from pathlib import Path
 import site
-
-# 获取markitdown包的路径
-markitdown_src = os.path.join(os.path.dirname(SPECPATH), 'packages', 'markitdown', 'src')
 
 # 获取magika模型文件路径
 try:
@@ -58,7 +48,7 @@ block_cipher = None
 
 a = Analysis(
     ['markitdown_gui.py'],
-    pathex=['.', markitdown_src],
+    pathex=['.'],
     binaries=[],
     datas=magika_datas,
     hiddenimports=[
