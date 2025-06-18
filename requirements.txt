@@ -1,0 +1,21 @@
+# MarkItDown GUI 依赖文件
+
+# 核心转换引擎
+markitdown[all]>=0.0.1a4
+
+# GUI 相关（通常已内置于 Python）
+# tkinter - 内置模块
+
+# 构建工具（可选）
+pyinstaller>=6.0.0
+
+# 图片处理（通常由 markitdown[all] 安装）
+# Pillow>=10.0.0
+
+# 其他依赖（通常由 markitdown[all] 安装）
+# requests>=2.25.0
+# beautifulsoup4>=4.9.0
+# python-docx>=0.8.11
+# openpyxl>=3.0.0
+# pdfplumber>=0.7.0
+# pypdf>=3.0.0 
