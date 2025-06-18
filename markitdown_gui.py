@@ -13,6 +13,11 @@ import sys
 import traceback
 from pathlib import Path
 import webbrowser
+import tempfile
+import shutil
+import zipfile
+import re
+import base64
 
 try:
     from markitdown import MarkItDown
@@ -84,6 +89,10 @@ class MarkItDownGUI:
         # 初始化 MarkItDown
         self.markitdown = self._create_markitdown_instance()
         
+        # 变量
+        self.extracted_images = []  # 存储提取的图片信息
+        self.source_file_path = ""  # 存储源文件路径
+        
         # 创建界面
         self.create_widgets()
         
@@ -93,22 +102,22 @@ class MarkItDownGUI:
     def create_widgets(self):
         """创建GUI组件"""
         # 主框架
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.main_frame = ttk.Frame(self.root, padding="10")
+        self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # 配置网格权重
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(4, weight=1)
+        self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.rowconfigure(4, weight=1)  # 结果显示区域可伸缩
         
         # 标题
-        title_label = ttk.Label(main_frame, text="MarkItDown - 文件转Markdown工具", 
+        title_label = ttk.Label(self.main_frame, text="MarkItDown - 文件转Markdown工具", 
                                font=("Arial", 16, "bold"))
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
         # 文件选择区域
-        file_frame = ttk.LabelFrame(main_frame, text="文件选择", padding="10")
+        file_frame = ttk.LabelFrame(self.main_frame, text="文件选择", padding="10")
         file_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
         file_frame.columnconfigure(1, weight=1)
         
@@ -127,21 +136,58 @@ class MarkItDownGUI:
         drag_label.grid(row=1, column=0, columnspan=3, pady=(5, 0))
         
         # 选项设置区域
-        options_frame = ttk.LabelFrame(main_frame, text="转换选项", padding="10")
+        options_frame = ttk.LabelFrame(self.main_frame, text="转换选项", padding="10")
         options_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # 提取图片选项（针对epub文件）
+        self.extract_images_var = tk.BooleanVar(value=True)
+        self.extract_images_check = ttk.Checkbutton(
+            options_frame, 
+            text="从EPUB提取图片（保存到输出目录）",
+            variable=self.extract_images_var
+        )
+        self.extract_images_check.grid(row=0, column=0, sticky=tk.W, pady=2)
+        
+        # 图片处理方式选项
+        self.image_mode_var = tk.StringVar(value="relative")
+        ttk.Label(options_frame, text="图片引用方式:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        
+        image_mode_frame = ttk.Frame(options_frame)
+        image_mode_frame.grid(row=2, column=0, sticky=tk.W, pady=2)
+        
+        ttk.Radiobutton(
+            image_mode_frame, 
+            text="相对路径",
+            variable=self.image_mode_var,
+            value="relative"
+        ).grid(row=0, column=0, padx=(0, 10))
+        
+        ttk.Radiobutton(
+            image_mode_frame, 
+            text="绝对路径",
+            variable=self.image_mode_var,
+            value="absolute"
+        ).grid(row=0, column=1, padx=(0, 10))
+        
+        ttk.Radiobutton(
+            image_mode_frame, 
+            text="Base64编码",
+            variable=self.image_mode_var,
+            value="base64"
+        ).grid(row=0, column=2)
         
         # 保留数据URI选项
         self.keep_data_uris_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(options_frame, text="保留数据URI（如base64编码的图片）", 
-                       variable=self.keep_data_uris_var).grid(row=0, column=0, sticky=tk.W)
+                       variable=self.keep_data_uris_var).grid(row=3, column=0, sticky=tk.W)
         
         # 使用插件选项
         self.use_plugins_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(options_frame, text="启用第三方插件", 
-                       variable=self.use_plugins_var).grid(row=1, column=0, sticky=tk.W)
+                       variable=self.use_plugins_var).grid(row=4, column=0, sticky=tk.W)
         
         # 操作按钮区域
-        button_frame = ttk.Frame(main_frame)
+        button_frame = ttk.Frame(self.main_frame)
         button_frame.grid(row=3, column=0, columnspan=3, pady=(0, 10))
         
         self.convert_button = ttk.Button(button_frame, text="转换为Markdown", 
@@ -156,7 +202,7 @@ class MarkItDownGUI:
         self.clear_button.pack(side=tk.LEFT)
         
         # 结果显示区域
-        result_frame = ttk.LabelFrame(main_frame, text="转换结果", padding="10")
+        result_frame = ttk.LabelFrame(self.main_frame, text="转换结果", padding="10")
         result_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         result_frame.columnconfigure(0, weight=1)
         result_frame.rowconfigure(0, weight=1)
@@ -166,18 +212,19 @@ class MarkItDownGUI:
                                                     height=20, width=80)
         self.result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # 状态栏
-        self.status_var = tk.StringVar(value="就绪")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var, 
-                              relief=tk.SUNKEN, anchor=tk.W)
+        # 状态栏和进度条
+        self.status_var = tk.StringVar(value="准备就绪")
+        status_bar = ttk.Label(self.main_frame, textvariable=self.status_var, 
+                               relief=tk.SUNKEN, anchor=tk.W)
         status_bar.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
         
         # 关于按钮
-        about_button = ttk.Button(main_frame, text="关于", command=self.show_about)
+        about_button = ttk.Button(self.main_frame, text="关于", command=self.show_about)
         about_button.grid(row=5, column=2, sticky=tk.E, pady=(10, 0))
         
         # 进度条（初始隐藏）
-        self.progress = ttk.Progressbar(main_frame, mode='indeterminate')
+        self.progress = ttk.Progressbar(self.main_frame, mode='indeterminate')
+        # 不立即网格化，在需要时再显示
         
     def _create_markitdown_instance(self):
         """创建MarkItDown实例，处理打包后的magika模型路径"""
@@ -295,77 +342,219 @@ class MarkItDownGUI:
             self.file_path_var.set(filename)
             self.status_var.set(f"已选择文件: {os.path.basename(filename)}")
     
+    def extract_epub_images(self, epub_path, output_dir):
+        """从EPUB文件中提取图片"""
+        images_extracted = []
+        
+        try:
+            # 创建图片输出目录
+            images_dir = os.path.join(output_dir, "images")
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # 打开EPUB文件（实际上是ZIP文件）
+            with zipfile.ZipFile(epub_path, 'r') as epub_zip:
+                # 获取所有文件列表
+                file_list = epub_zip.namelist()
+                
+                # 查找图片文件
+                image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp'}
+                image_files = [f for f in file_list 
+                             if os.path.splitext(f.lower())[1] in image_extensions]
+                
+                # 提取图片文件
+                for image_file in image_files:
+                    try:
+                        # 获取文件名
+                        filename = os.path.basename(image_file)
+                        if not filename:  # 跳过目录
+                            continue
+                            
+                        # 确保文件名唯一
+                        counter = 1
+                        base_name, ext = os.path.splitext(filename)
+                        final_filename = filename
+                        
+                        while os.path.exists(os.path.join(images_dir, final_filename)):
+                            final_filename = f"{base_name}_{counter}{ext}"
+                            counter += 1
+                        
+                        # 提取文件
+                        output_path = os.path.join(images_dir, final_filename)
+                        with epub_zip.open(image_file) as source:
+                            with open(output_path, 'wb') as target:
+                                target.write(source.read())
+                        
+                        # 记录原始路径和新路径的映射
+                        images_extracted.append({
+                            'original_path': image_file,
+                            'extracted_path': output_path,
+                            'filename': final_filename,
+                            'relative_path': f"images/{final_filename}"
+                        })
+                        
+                    except Exception as e:
+                        print(f"提取图片失败 {image_file}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"打开EPUB文件失败: {e}")
+            return []
+        
+        return images_extracted
+    
+    def process_markdown_images(self, markdown_content, extracted_images, output_dir):
+        """处理Markdown中的图片引用"""
+        if not extracted_images:
+            return markdown_content
+        
+        # 创建路径映射字典
+        path_mapping = {}
+        for img in extracted_images:
+            # 尝试匹配不同的路径格式
+            original_name = os.path.basename(img['original_path'])
+            path_mapping[original_name] = img
+            path_mapping[img['original_path']] = img
+            # 去掉路径前缀的变体
+            if '/' in img['original_path']:
+                path_mapping[img['original_path'].split('/')[-1]] = img
+        
+        # 图片引用的正则表达式
+        img_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+        
+        def replace_image_ref(match):
+            alt_text = match.group(1)
+            img_src = match.group(2)
+            
+            # 查找匹配的提取图片
+            found_img = None
+            img_basename = os.path.basename(img_src)
+            
+            # 尝试多种匹配方式
+            for key in [img_src, img_basename, img_src.replace('../', ''), img_src.replace('./', '')]:
+                if key in path_mapping:
+                    found_img = path_mapping[key]
+                    break
+            
+            if found_img:
+                # 根据选择的模式生成新的图片引用
+                if self.image_mode_var.get() == "relative":
+                    new_src = found_img['relative_path']
+                elif self.image_mode_var.get() == "absolute":
+                    new_src = os.path.abspath(found_img['extracted_path'])
+                else:  # base64
+                    try:
+                        with open(found_img['extracted_path'], 'rb') as img_file:
+                            img_data = img_file.read()
+                            img_ext = os.path.splitext(found_img['filename'])[1].lower()
+                            mime_type = {
+                                '.jpg': 'image/jpeg',
+                                '.jpeg': 'image/jpeg',
+                                '.png': 'image/png',
+                                '.gif': 'image/gif',
+                                '.bmp': 'image/bmp',
+                                '.svg': 'image/svg+xml'
+                            }.get(img_ext, 'image/jpeg')
+                            
+                            base64_data = base64.b64encode(img_data).decode()
+                            new_src = f"data:{mime_type};base64,{base64_data}"
+                    except Exception as e:
+                        print(f"Base64编码图片失败: {e}")
+                        new_src = found_img['relative_path']
+                
+                return f"![{alt_text}]({new_src})"
+            else:
+                # 未找到匹配的图片，保持原样
+                return match.group(0)
+        
+        # 替换所有图片引用
+        processed_content = re.sub(img_pattern, replace_image_ref, markdown_content)
+        
+        return processed_content
+
     def convert_file(self):
-        """转换文件为Markdown"""
-        file_path = self.file_path_var.get().strip()
-        
-        if not file_path:
-            messagebox.showerror("错误", "请先选择要转换的文件！")
+        """转换文件"""
+        if not self.file_path_var.get():
+            messagebox.showerror("错误", "请先选择要转换的文件")
             return
         
-        if not os.path.exists(file_path):
-            messagebox.showerror("错误", "选择的文件不存在！")
-            return
-        
-        # 禁用转换按钮，显示进度条
+        # 禁用转换按钮
         self.convert_button.config(state=tk.DISABLED)
-        self.progress.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 0))
         self.progress.start()
         
-        # 在线程中执行转换
-        threading.Thread(target=self._convert_thread, args=(file_path,), daemon=True).start()
+        # 在新线程中进行转换
+        thread = threading.Thread(target=self._convert_worker)
+        thread.daemon = True
+        thread.start()
     
-    def _convert_thread(self, file_path):
-        """在线程中执行文件转换"""
+    def _convert_worker(self):
+        """转换工作线程"""
         try:
-            self.root.after(0, lambda: self.status_var.set("正在转换文件..."))
-            
-            # 重新初始化 MarkItDown（考虑插件设置）
-            self.markitdown = self._create_markitdown_instance_with_options()
-            
-            # 执行转换
-            result = self.markitdown.convert(file_path)
-            
-            # 在主线程中更新UI
-            self.root.after(0, lambda: self._conversion_complete(result, None))
-            
-        except Exception as e:
-            # 在主线程中显示错误
-            self.root.after(0, lambda: self._conversion_complete(None, e))
-    
-    def _conversion_complete(self, result, error):
-        """转换完成后的处理"""
-        # 停止进度条，隐藏进度条
-        self.progress.stop()
-        self.progress.grid_remove()
-        
-        # 重新启用转换按钮
-        self.convert_button.config(state=tk.NORMAL)
-        
-        if error:
-            # 显示错误
-            error_msg = f"转换失败: {str(error)}"
-            self.status_var.set(error_msg)
-            messagebox.showerror("转换错误", f"{error_msg}\n\n详细信息:\n{traceback.format_exc()}")
-            return
-        
-        if result and result.text_content:
-            # 显示转换结果
-            self.result_text.delete(1.0, tk.END)
-            self.result_text.insert(1.0, result.text_content)
-            
-            # 启用保存按钮
-            self.save_button.config(state=tk.NORMAL)
+            md = self.markitdown
+            input_path = self.file_path_var.get()
             
             # 更新状态
-            file_name = os.path.basename(self.file_path_var.get())
-            self.status_var.set(f"转换完成: {file_name} -> Markdown")
+            self.root.after(0, lambda: self.status_var.set("正在转换文件..."))
             
-            # 显示成功消息
-            messagebox.showinfo("转换成功", f"文件已成功转换为Markdown格式！\n\n字符数: {len(result.text_content)}")
-        else:
-            self.status_var.set("转换完成，但没有生成内容")
-            messagebox.showwarning("转换完成", "文件转换完成，但没有生成任何内容。")
+            # 转换文件
+            result = md.convert(input_path)
+            markdown_content = result.text_content
+            
+            # 检查是否是EPUB文件且需要提取图片
+            is_epub = input_path.lower().endswith('.epub')
+            extract_images = self.extract_images_var.get()
+            
+            if is_epub and extract_images:
+                self.root.after(0, lambda: self.status_var.set("正在提取图片..."))
+                
+                # 确定输出目录
+                output_dir = os.path.dirname(input_path)
+                
+                # 提取图片
+                extracted_images = self.extract_epub_images(input_path, output_dir)
+                
+                # 保存提取的图片信息和源文件路径
+                self.extracted_images = extracted_images
+                self.source_file_path = input_path
+                
+                if extracted_images:
+                    self.root.after(0, lambda: self.status_var.set("正在处理图片引用..."))
+                    
+                    # 处理Markdown中的图片引用
+                    markdown_content = self.process_markdown_images(markdown_content, extracted_images, output_dir)
+                    
+                    # 更新状态信息
+                    img_count = len(extracted_images)
+                    status_msg = f"转换完成！提取了 {img_count} 张图片"
+                else:
+                    status_msg = "转换完成！未找到图片文件"
+            else:
+                # 清空之前的图片信息
+                self.extracted_images = []
+                self.source_file_path = input_path
+                status_msg = "转换完成！"
+            
+            # 更新结果显示
+            def update_result():
+                self.result_text.delete(1.0, tk.END)
+                self.result_text.insert(1.0, markdown_content)
+                self.status_var.set(status_msg)
+                self.progress.stop()
+                self.convert_button.config(state=tk.NORMAL)
+                self.save_button.config(state=tk.NORMAL)  # 启用保存按钮
+            
+            self.root.after(0, update_result)
+            
+        except Exception as e:
+            error_msg = f"转换失败: {str(e)}"
+            print(f"转换错误: {traceback.format_exc()}")
+            
+            def show_error():
+                self.status_var.set(error_msg)
+                self.progress.stop()
+                self.convert_button.config(state=tk.NORMAL)
+                messagebox.showerror("转换错误", error_msg)
+            
+            self.root.after(0, show_error)
     
     def save_result(self):
         """保存转换结果"""
@@ -393,11 +582,49 @@ class MarkItDownGUI:
         
         if filename:
             try:
+                # 保存Markdown文件
                 with open(filename, 'w', encoding='utf-8') as f:
                     f.write(content)
                 
-                self.status_var.set(f"结果已保存到: {os.path.basename(filename)}")
-                messagebox.showinfo("保存成功", f"Markdown文件已保存到:\n{filename}")
+                saved_files = [filename]
+                
+                # 如果有提取的图片，复制图片到新的输出目录
+                if self.extracted_images:
+                    output_dir = os.path.dirname(filename)
+                    images_target_dir = os.path.join(output_dir, "images")
+                    
+                    # 创建图片目录
+                    os.makedirs(images_target_dir, exist_ok=True)
+                    
+                    # 复制图片文件
+                    copied_images = []
+                    for img_info in self.extracted_images:
+                        src_path = img_info['extracted_path']
+                        filename_only = os.path.basename(src_path)
+                        target_path = os.path.join(images_target_dir, filename_only)
+                        
+                        # 如果源文件和目标文件不是同一个，才复制
+                        if os.path.abspath(src_path) != os.path.abspath(target_path):
+                            try:
+                                import shutil
+                                shutil.copy2(src_path, target_path)
+                                copied_images.append(filename_only)
+                                saved_files.append(target_path)
+                            except Exception as copy_error:
+                                print(f"复制图片失败 {src_path}: {copy_error}")
+                    
+                    if copied_images:
+                        status_msg = f"已保存: {os.path.basename(filename)} 和 {len(copied_images)} 张图片"
+                        info_msg = f"文件已保存到:\n{filename}\n\n图片已保存到:\n{images_target_dir}\n\n复制的图片: {', '.join(copied_images)}"
+                    else:
+                        status_msg = f"已保存: {os.path.basename(filename)} (图片已在目标目录)"
+                        info_msg = f"文件已保存到:\n{filename}\n\n图片目录: {images_target_dir}"
+                else:
+                    status_msg = f"已保存: {os.path.basename(filename)}"
+                    info_msg = f"Markdown文件已保存到:\n{filename}"
+                
+                self.status_var.set(status_msg)
+                messagebox.showinfo("保存成功", info_msg)
                 
                 # 询问是否打开文件
                 if messagebox.askyesno("打开文件", "是否要打开保存的文件？"):
@@ -425,7 +652,11 @@ class MarkItDownGUI:
         self.file_path_var.set("")
         self.result_text.delete(1.0, tk.END)
         self.save_button.config(state=tk.DISABLED)
-        self.status_var.set("就绪")
+        self.status_var.set("准备就绪")
+        
+        # 清空图片信息
+        self.extracted_images = []
+        self.source_file_path = ""
     
     def show_about(self):
         """显示关于对话框"""
